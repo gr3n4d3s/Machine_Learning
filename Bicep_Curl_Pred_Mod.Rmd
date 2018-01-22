@@ -1,0 +1,234 @@
+---
+title: "Weight Lifting Activity Recognition"
+author: "gr3n4d3s"
+date: "January 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+
+```
+
+##Synopsis and objective   
+Human activity research(HAR) has had an influx of data thanks to devices like
+Fitbit, Jawbone Up and even some smart phones. Disseminating this data could be 
+useful for a wide range of applications, from at home elderly care to extreme 
+sports. Most often data is used to measure movement in a quantitative or 
+discriminative sense to determine the amount or which exercise was performed. 
+However, in this report we'll take data from Groupware's HAR research(1) on 
+Bicep Curls to determine the quality of activity. The data collected was of 
+six participants performing bicep curls in specific manners, both 
+correctly(labeled A) and incorrectly(bad form, labeled B,C,D,E). This was 
+collected via 4 accelerometers located on the bicep, waist, forearm and the 
+dumbbell itself. Let's not try to duplicate their report, but rather validate 
+or reject it.  
+(1)http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201
+
+```{r main, echo = FALSE, warning = FALSE, message=FALSE}
+
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(gridExtra)
+library(xtable)
+trainFileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testFileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# download files
+if (!file.exists("./pml-training.csv")) {
+        mydir<- paste0(getwd(),"/","pml-training.csv")
+        download.file(trainFileUrl, destfile = mydir)
+}
+if (!file.exists("./pml-testing.csv")){
+        mydir<- paste0(getwd(),"/","pml-testing.csv")
+        download.file(testFileUrl, destfile = mydir)
+}
+
+#read files into R *****edit stringsAsFactors = false
+training <- read.csv("pml-training.csv", stringsAsFactors = FALSE)
+testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE)
+
+# reproducibility
+set.seed(25)
+```
+
+## The Attack  
+
+### Preprocess
+After a little exploring i notice that the data contain many NA's associated with 
+columns that had statistical data compiled from other columns of raw data. this was
+removed and the remaining set was tested for Near Zero-variance, 
+documentation [here](https://topepo.github.io/caret/pre-processing.html).  
+
+#####Truncated sample  
+
+```{r NZV, echo=FALSE, warning=FALSE, message=FALSE, results="asis" }
+# use caret to find near zero values
+# creating training data of columns that don't contain na's and
+# filter out the near zero covariats that might not applicable to real 
+# world analyzation
+clntrain <- training[colSums(is.na(training))==0]
+nsv <- nearZeroVar(clntrain, saveMetrics = TRUE)
+
+# clean training data
+clntrain <- clntrain[,nsv$nzv==FALSE]
+clntrain <- select(clntrain, -c(X,
+                                user_name,
+                                cvtd_timestamp
+                                #raw_timestamp_part_1,
+                                #raw_timestamp_part_2,
+                                #num_window
+                                ))
+
+print(xtable(nsv[1:10,]), type = "html")
+```  
+<br>
+Next step was to take a look a principal components to get an idea of what the 
+data might look like and maybe understand which components had the most variance. 
+This would then be useful for model selection and possibly number of components 
+needed to explain a desired percent of variance.
+
+```{r PCA, echo=FALSE, warning=FALSE, message=FALSE}
+#pca analysis
+plotPcPros <- prcomp(clntrain[,-56], scale. = TRUE, center = TRUE)
+plot1 <- qplot((y=plotPcPros$sdev^2)/sum(plotPcPros$sdev^2)*100,
+        x = seq_along(plotPcPros$sdev),
+        xlab = "Principal Components",
+        ylab = "Percentage of Variance Explained",
+        main = "Principal Component Variance",
+        geom = c("point", "line"))
+
+pcPros <- preProcess(clntrain[,-56], method = c("pca", "center", "scale"))
+pc <- predict(pcPros, clntrain[,-56])
+Exercise <- clntrain$classe
+plot2 <-qplot(x = pc[,1], y = pc[,2], color = Exercise,
+        xlab = "PC1",
+        ylab = "PC2",
+        main = "Principal Component Analysis")
+grid.arrange(plot1, plot2, ncol = 2)
+```  
+
+###Model building  
+As you can see from our previous analysis, 20 or so components make up the 
+majority of our data variance(left plot). Also the structure of the data on 
+the right would lead me to think that more of a classification training
+approach would be appropriate. lets train 3 different models and compare.  
+Now although i do have a test set of data I'm going to spit my training 
+data set into a training and test set as well. This will allow me to 
+test my results against results that i know are correct so i can get 
+and idea of how accurate the models will be. Lets see accuracies of 
+Random Forests, Gradient Boosting and Linear Discriminate Analysis.
+
+```{r Mod, echo=FALSE, warning=FALSE, message=FALSE}
+# no classe data in the testing data set which looking
+# back now makes sense, soooooo split it to win it
+inTrain <- createDataPartition(clntrain$classe, p = .75)[[1]]
+xTraining <- clntrain[inTrain,]
+xTesting <- clntrain[-inTrain,]
+
+#turn on the afterburners... permission to buzz the tower
+library(parallel)
+library(doParallel)
+library(knitr)
+clustr <- makeCluster(detectCores()-1)
+registerDoParallel(clustr)
+#fit control allow for parallel processing
+fitControl <- trainControl(method = "cv", 
+                           allowParallel = TRUE,
+                           preProcOptions = list(thresh = .95))
+#fit three models random forest, gradient boosting, 
+#and linear discriminant analysis
+fitRf<- train(classe ~., 
+                        data = xTraining,
+                        method = "parRF",
+                        preProcess = "pca",
+                        trControl = fitControl)
+#gabage wrapped to keep gbm output clean
+garbage <- capture.output(
+        fitGbm <- train(classe ~., data = xTraining, 
+                method = "gbm", 
+                preProcess = "pca", 
+                trControl = fitControl))
+
+fitLda <- train(classe ~., data = xTraining, 
+                method = "lda", 
+                preProcess = "pca", 
+                trControl = fitControl)
+
+predRf<- predict(fitRf, xTesting)
+predGbm<- predict(fitGbm, xTesting)
+predLda<- predict(fitLda, xTesting)
+
+
+confMatRf <- confusionMatrix(predRf, xTesting$classe)
+confMatGbm <- confusionMatrix(predGbm, xTesting$classe)
+confMatLda <- confusionMatrix(predLda, xTesting$classe)
+
+#show results
+Accuracy <- data.frame(confMatRf$overall[1],confMatGbm$overall[1],
+                       confMatLda$overall[1])
+names(Accuracy)<- c("Random Forests", "Gradient Boosting", 
+                    "Linear Discriminant")
+
+Accuracy
+References <- kable(list(confMatRf$table,
+                         "|","|",confMatGbm$table,
+                         "|","|",confMatLda$table), 
+                    caption = c("Confusion Matrix Tables - left to right are: 
+                                RF, GBM, LDA"),
+                    align = c("c"))
+References
+```  
+
+###Final predictions  
+
+Random Forests shows the best promise for a good prediction model. Lets see the 
+full statistics.
+```{r confMatRf, echo=FALSE}
+confMatRf
+```  
+
+###Conclusion and answers  
+Now creating a training model based on the entire training data set 
+(not just a subset), and use that model to predict our test questions. 
+Why use the entire set now? Well, mainly because we can and probably 
+should, but also there was a slight difference in predictions cast from 
+a model built on 75% and 100% of the training data.
+```{r conclusion, echo=FALSE}
+lastfitRf<- train(classe ~., 
+                        data = clntrain,
+                        method = "parRF",
+                        preProcess = "pca",
+                        trControl = fitControl)
+stopCluster(clustr)
+lastPred<- predict(lastfitRf, testing)
+print("Prediction using subset of training data")
+predict(fitRf, testing)
+print("prediction using all available training data")
+lastPred
+```  
+  
+###Final thoughts  
+Random Forests was a great option to predict these kinds of problems. 
+I never realized how much model selection plays into creating a good ML algo.
+I hope this was easier to understand than it was to create.  
+And as always thanks for looking  
+
+####code
+```{r ref.label="setup", eval=FALSE}
+```
+```{r ref.label="main", eval=FALSE}
+```
+```{r ref.label="NVZ", eval=FALSE}
+```
+```{r ref.label="PLA", eval=FALSE}
+```
+```{r ref.label="Mod", eval=FALSE}
+```
+```{r ref.label="confMatRf", eval=FALSE}
+```
+```{r ref.label="conclusion", eval=FALSE}
+```
+
+
