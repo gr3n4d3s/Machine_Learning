@@ -137,7 +137,7 @@ $(document).ready(function () {
 <div id="truncated-sample" class="section level5">
 <h5>Truncated sample</h5>
 <!-- html table generated in R 3.4.0 by xtable 1.8-2 package -->
-<!-- Sun Jan 21 21:45:58 2018 -->
+<!-- Mon Jan 22 13:17:55 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -627,6 +627,41 @@ testing &lt;- read.csv(&quot;pml-testing.csv&quot;, stringsAsFactors = FALSE)
 
 # reproducibility
 set.seed(25)</code></pre>
+<pre class="r"><code># use caret to find near zero values
+# creating training data of columns that don't contain na's and
+# filter out the near zero covariats that might not applicable to real 
+# world analyzation
+clntrain &lt;- training[colSums(is.na(training))==0]
+nsv &lt;- nearZeroVar(clntrain, saveMetrics = TRUE)
+
+# clean training data
+clntrain &lt;- clntrain[,nsv$nzv==FALSE]
+clntrain &lt;- select(clntrain, -c(X,
+                                user_name,
+                                cvtd_timestamp
+                                #raw_timestamp_part_1,
+                                #raw_timestamp_part_2,
+                                #num_window
+                                ))
+
+print(xtable(nsv[1:10,]), type = &quot;html&quot;)</code></pre>
+<pre class="r"><code>#pca analysis
+plotPcPros &lt;- prcomp(clntrain[,-56], scale. = TRUE, center = TRUE)
+plot1 &lt;- qplot((y=plotPcPros$sdev^2)/sum(plotPcPros$sdev^2)*100,
+        x = seq_along(plotPcPros$sdev),
+        xlab = &quot;Principal Components&quot;,
+        ylab = &quot;Percentage of Variance Explained&quot;,
+        main = &quot;Principal Component Variance&quot;,
+        geom = c(&quot;point&quot;, &quot;line&quot;))
+
+pcPros &lt;- preProcess(clntrain[,-56], method = c(&quot;pca&quot;, &quot;center&quot;, &quot;scale&quot;))
+pc &lt;- predict(pcPros, clntrain[,-56])
+Exercise &lt;- clntrain$classe
+plot2 &lt;-qplot(x = pc[,1], y = pc[,2], color = Exercise,
+        xlab = &quot;PC1&quot;,
+        ylab = &quot;PC2&quot;,
+        main = &quot;Principal Component Analysis&quot;)
+grid.arrange(plot1, plot2, ncol = 2)</code></pre>
 <pre class="r"><code># no classe data in the testing data set which looking
 # back now makes sense, soooooo split it to win it
 inTrain &lt;- createDataPartition(clntrain$classe, p = .75)[[1]]

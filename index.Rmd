@@ -223,9 +223,9 @@ And as always thanks for looking
 ```
 ```{r ref.label="main", eval=FALSE}
 ```
-```{r ref.label="NVZ", eval=FALSE}
+```{r ref.label="NZV", eval=FALSE}
 ```
-```{r ref.label="PLA", eval=FALSE}
+```{r ref.label="PCA", eval=FALSE}
 ```
 ```{r ref.label="Mod", eval=FALSE}
 ```
