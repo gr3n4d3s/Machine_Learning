@@ -118,7 +118,10 @@ Now although i do have a test set of data I'm going to spit my training
 data set into a training and test set as well. This will allow me to 
 test my results against results that i know are correct so i can get 
 and idea of how accurate the models will be. Lets see accuracies of 
-Random Forests, Gradient Boosting and Linear Discriminate Analysis.
+Random Forests, Gradient Boosting and Linear Discriminate Analysis. 
+I'll set all prediction controls to 10 fold Cross Validation, 
+i don't want to use anything with too many folds, so to keep the 
+computing time down.
 
 ```{r Mod, echo=FALSE, warning=FALSE, message=FALSE}
 # no classe data in the testing data set which looking
@@ -182,9 +185,9 @@ References
 ```  
 
 ###Final predictions  
-
-Random Forests shows the best promise for a good prediction model. Lets see the 
-full statistics.
+Random Forests shows the best promise for a good prediction model. With a 
+predicted accuracy of 98% and an out of sample error of about 2%.  
+Lets see the full statistics.
 ```{r confMatRf, echo=FALSE}
 confMatRf
 ```  
