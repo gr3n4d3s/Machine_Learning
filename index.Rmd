@@ -234,4 +234,4 @@ And as always thanks for looking
 ```{r ref.label="conclusion", eval=FALSE}
 ```
 
-
+ 
